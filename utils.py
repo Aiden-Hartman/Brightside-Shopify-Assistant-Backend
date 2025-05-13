@@ -1,36 +1,68 @@
+"""
+This module contains utility functions used across the application.
+"""
 import logging
 import re
 from datetime import datetime
 from functools import wraps
 from tenacity import retry, stop_after_attempt, wait_exponential, before_log, after_log
-from typing import Callable, Any, Optional
+from typing import Callable, Any, Optional, Dict
 import unicodedata
+import json
 
-# Configure logging
+# Configure logging with more detailed format
 logging.basicConfig(
-    level=logging.INFO,
-    format='[%(levelname)s] %(asctime)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-def log_info(message: str) -> None:
+def log_info(message: str, data: Optional[Dict[str, Any]] = None) -> None:
     """
-    Log an info message with timestamp.
+    Log an informational message with optional data.
+    """
+    logger.debug("="*50)
+    logger.debug("INFO LOG")
+    logger.debug("="*50)
     
-    Args:
-        message: The message to log
-    """
-    logger.info(message)
+    try:
+        logger.debug(f"Message: {message}")
+        if data:
+            logger.debug("Additional data:")
+            logger.debug(json.dumps(data, indent=2))
+        
+        logger.info(message)
+        logger.debug("="*50)
+        
+    except Exception as e:
+        logger.error(f"Error in log_info: {str(e)}", exc_info=True)
+        logger.debug("="*50)
+        raise
 
-def log_error(message: str) -> None:
+def log_error(message: str, error: Exception, data: Optional[Dict[str, Any]] = None) -> None:
     """
-    Log an error message with timestamp.
+    Log an error message with exception details and optional data.
+    """
+    logger.debug("="*50)
+    logger.debug("ERROR LOG")
+    logger.debug("="*50)
     
-    Args:
-        message: The error message to log
-    """
-    logger.error(message)
+    try:
+        logger.debug(f"Message: {message}")
+        logger.debug(f"Error type: {type(error).__name__}")
+        logger.debug(f"Error message: {str(error)}")
+        
+        if data:
+            logger.debug("Additional data:")
+            logger.debug(json.dumps(data, indent=2))
+        
+        logger.error(message, exc_info=True)
+        logger.debug("="*50)
+        
+    except Exception as e:
+        logger.error(f"Error in log_error: {str(e)}", exc_info=True)
+        logger.debug("="*50)
+        raise
 
 def create_retry_decorator(
     max_attempts: int = 2,
@@ -104,7 +136,7 @@ def safe_parse_float(value: Any, default: float = 0.0) -> float:
     try:
         return float(value)
     except (ValueError, TypeError):
-        log_error(f"Failed to parse float value: {value}")
+        log_error(f"Failed to parse float value: {value}", None, None)
         return default
 
 def safe_parse_int(value: Any, default: int = 0) -> int:
@@ -124,8 +156,72 @@ def safe_parse_int(value: Any, default: int = 0) -> int:
     try:
         return int(value)
     except (ValueError, TypeError):
-        log_error(f"Failed to parse integer value: {value}")
+        log_error(f"Failed to parse integer value: {value}", None, None)
         return default
+
+def format_timestamp(timestamp: datetime) -> str:
+    """
+    Format a datetime object as an ISO 8601 string.
+    """
+    logger.debug("="*50)
+    logger.debug("FORMATTING TIMESTAMP")
+    logger.debug("="*50)
+    
+    try:
+        logger.debug(f"Input timestamp: {timestamp}")
+        formatted = timestamp.isoformat()
+        logger.debug(f"Formatted timestamp: {formatted}")
+        logger.debug("="*50)
+        return formatted
+        
+    except Exception as e:
+        logger.error(f"Error formatting timestamp: {str(e)}", exc_info=True)
+        logger.debug("="*50)
+        raise
+
+def validate_json(data: Dict[str, Any]) -> bool:
+    """
+    Validate that a dictionary can be serialized to JSON.
+    """
+    logger.debug("="*50)
+    logger.debug("VALIDATING JSON")
+    logger.debug("="*50)
+    
+    try:
+        logger.debug("Input data:")
+        logger.debug(json.dumps(data, indent=2))
+        
+        # Try to serialize the data
+        json.dumps(data)
+        logger.debug("Data is valid JSON")
+        logger.debug("="*50)
+        return True
+        
+    except Exception as e:
+        logger.error(f"Invalid JSON data: {str(e)}", exc_info=True)
+        logger.debug("="*50)
+        return False
+
+def safe_json_loads(json_str: str) -> Optional[Dict[str, Any]]:
+    """
+    Safely parse a JSON string, returning None if invalid.
+    """
+    logger.debug("="*50)
+    logger.debug("SAFELY PARSING JSON")
+    logger.debug("="*50)
+    
+    try:
+        logger.debug(f"Input JSON string: {json_str}")
+        result = json.loads(json_str)
+        logger.debug("Successfully parsed JSON:")
+        logger.debug(json.dumps(result, indent=2))
+        logger.debug("="*50)
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error parsing JSON: {str(e)}", exc_info=True)
+        logger.debug("="*50)
+        return None
 
 # Example usage of retry decorator
 @create_retry_decorator()
