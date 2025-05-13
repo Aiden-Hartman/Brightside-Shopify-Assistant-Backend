@@ -21,6 +21,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Custom JSON encoder for datetime objects
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
 # Initialize router, memory store, and chat LLM
 router = APIRouter()
 memory_store = MemoryStore()
@@ -80,7 +87,7 @@ async def chat(request: ChatRequest = Body(...)) -> ChatResponse:
     try:
         # Log the request for debugging
         logger.debug("Request details:")
-        logger.debug(json.dumps(request.dict(), indent=2))
+        logger.debug(json.dumps(request.dict(), indent=2, cls=DateTimeEncoder))
 
         # Extract fields from validated request
         message = request.message
@@ -106,8 +113,9 @@ async def chat(request: ChatRequest = Body(...)) -> ChatResponse:
             content=message,
             timestamp=datetime.utcnow()
         )
+        # Log the user message
         logger.debug("Created user message:")
-        logger.debug(json.dumps(user_message.dict(), indent=2))
+        logger.debug(json.dumps(user_message.dict(), indent=2, cls=DateTimeEncoder))
 
         # Get or create session
         sid = session_id or memory_store.create_session(client_id)
@@ -134,7 +142,7 @@ async def chat(request: ChatRequest = Body(...)) -> ChatResponse:
         logger.debug(f"- Has stored quiz answers: {'Yes' if stored_quiz_answers else 'No'}")
         if chat_hist:
             logger.debug("Chat history:")
-            logger.debug(json.dumps([msg for msg in chat_hist], indent=2))
+            logger.debug(json.dumps([msg for msg in chat_hist], indent=2, cls=DateTimeEncoder))
 
         # Build dynamic system prompt
         logger.debug("\nBuilding system prompt...")
@@ -150,7 +158,7 @@ async def chat(request: ChatRequest = Body(...)) -> ChatResponse:
                 system_prompt=system_prompt
             )
             logger.debug("LLM response generated successfully:")
-            logger.debug(json.dumps(response.dict(), indent=2))
+            logger.debug(json.dumps(response.dict(), indent=2, cls=DateTimeEncoder))
         except Exception as llm_exc:
             logger.error(f"LLM Error: {str(llm_exc)}", exc_info=True)
             response = ChatResponse(
@@ -167,7 +175,7 @@ async def chat(request: ChatRequest = Body(...)) -> ChatResponse:
             timestamp=datetime.utcnow()
         )
         logger.debug("Created assistant message:")
-        logger.debug(json.dumps(assistant_message.dict(), indent=2))
+        logger.debug(json.dumps(assistant_message.dict(), indent=2, cls=DateTimeEncoder))
         
         memory_store.add_message(sid, assistant_message.dict())
         logger.debug("Stored assistant message in memory")
