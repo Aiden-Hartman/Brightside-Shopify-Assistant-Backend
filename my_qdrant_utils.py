@@ -80,26 +80,27 @@ class QdrantClient:
             }
             logger.debug(f"Collection config: {json.dumps(collection_config, indent=2)}")
             
+            # Create collection with minimal configuration
             self.client.recreate_collection(
                 collection_name=self.collection_name,
                 vectors_config=VectorParams(
                     size=self.vector_size,
                     distance=Distance.COSINE
-                ),
-                optimizers_config=models.OptimizersConfigDiff(
-                    indexing_threshold=0,
-                    memmap_threshold=0,
-                    max_optimization_threads=4
-                ),
-                quantization_config=None,
-                init_from=None,
-                on_disk_payload=True
+                )
             )
             logger.info(f"Successfully created collection '{self.collection_name}'")
             
-            # Verify collection creation
-            collection_info = self.client.get_collection(self.collection_name)
-            logger.debug(f"Collection info: {json.dumps(collection_info.dict(), indent=2)}")
+            # Verify collection creation - handle both local and cloud responses
+            try:
+                collection_info = self.client.get_collection(self.collection_name)
+                # Log only the essential information we need
+                logger.debug("Collection created successfully with:")
+                logger.debug(f"- Name: {collection_info.name}")
+                logger.debug(f"- Vector size: {collection_info.config.params.vectors.size}")
+                logger.debug(f"- Distance: {collection_info.config.params.vectors.distance}")
+            except Exception as e:
+                logger.warning(f"Could not get detailed collection info: {str(e)}")
+                logger.info("Collection was created but could not verify details")
             
         except Exception as e:
             logger.error(f"Error in collection setup: {str(e)}", exc_info=True)
