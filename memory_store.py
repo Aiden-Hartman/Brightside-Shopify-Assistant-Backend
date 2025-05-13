@@ -14,6 +14,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Custom JSON encoder for datetime objects
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
 class MemoryStore:
     def __init__(self):
         """Initialize the memory store with empty dictionaries for messages and quiz answers."""
@@ -70,7 +77,7 @@ class MemoryStore:
         try:
             logger.debug(f"Session ID: {session_id}")
             logger.debug("Message to add:")
-            logger.debug(json.dumps(message, indent=2))
+            logger.debug(json.dumps(message, indent=2, cls=DateTimeEncoder))
             
             if session_id not in self.messages:
                 logger.debug(f"Session {session_id} not found, creating new session")
@@ -103,7 +110,7 @@ class MemoryStore:
             messages = self.messages[session_id]
             logger.debug(f"Found {len(messages)} messages")
             logger.debug("Messages:")
-            logger.debug(json.dumps(messages, indent=2))
+            logger.debug(json.dumps(messages, indent=2, cls=DateTimeEncoder))
             
             logger.debug("="*50)
             return messages
@@ -124,7 +131,7 @@ class MemoryStore:
         try:
             logger.debug(f"Session ID: {session_id}")
             logger.debug("Quiz answers to store:")
-            logger.debug(json.dumps(answers, indent=2))
+            logger.debug(json.dumps(answers, indent=2, cls=DateTimeEncoder))
             
             if session_id not in self.quiz_answers:
                 logger.debug(f"Session {session_id} not found, creating new session")
@@ -156,7 +163,7 @@ class MemoryStore:
             
             answers = self.quiz_answers[session_id]
             logger.debug("Found quiz answers:")
-            logger.debug(json.dumps(answers, indent=2))
+            logger.debug(json.dumps(answers, indent=2, cls=DateTimeEncoder))
             
             logger.debug("="*50)
             return answers
