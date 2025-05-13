@@ -3,20 +3,26 @@ This module handles the OpenAI text generation logic for chat completions.
 It will contain the core LLM interaction logic and response generation.
 """
 import os
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Any
 from openai import AsyncOpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
 from dotenv import load_dotenv
 import logging
 import time
 from my_qdrant_utils import QdrantClient
-from models import Product, ChatResponse
+from models import Product, ChatResponse, ChatMessage
+from utils import log_info, log_error
+import json
+from datetime import datetime
 
 # Load environment variables
 load_dotenv()
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
+# Configure logging with more detailed format
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Constants
@@ -46,18 +52,35 @@ AVAILABLE_FUNCTIONS = {
 class ChatLLM:
     def __init__(self):
         """Initialize the chat LLM with OpenAI API configuration."""
-        logger.debug("Initializing ChatLLM...")
-        self.api_key = os.getenv("OPENAI_API_KEY")
-        logger.debug(f"OPENAI_API_KEY present: {'Yes' if self.api_key else 'No'}")
+        logger.debug("="*50)
+        logger.debug("INITIALIZING CHAT LLM")
+        logger.debug("="*50)
         
-        if not self.api_key:
-            error_msg = "OPENAI_API_KEY not found. Please add it to your .env file."
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+        try:
+            # Initialize OpenAI client
+            logger.debug("Initializing OpenAI client...")
+            self.api_key = os.getenv("OPENAI_API_KEY")
+            logger.debug(f"OPENAI_API_KEY present: {'Yes' if self.api_key else 'No'}")
+            
+            if not self.api_key:
+                error_msg = "OPENAI_API_KEY not found. Please add it to your .env file."
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            
+            self.client = AsyncOpenAI(api_key=self.api_key)
+            logger.debug("Successfully initialized OpenAI client")
+            
+            # Initialize Qdrant client
+            logger.debug("Initializing Qdrant client...")
+            self.qdrant_client = QdrantClient()
+            logger.debug("Successfully initialized Qdrant client")
+            
+            logger.info("Initialized OpenAI chat model with function calling capability")
+        except Exception as e:
+            logger.error(f"Error initializing ChatLLM: {str(e)}", exc_info=True)
+            raise
         
-        self.client = AsyncOpenAI(api_key=self.api_key)
-        self.qdrant_client = QdrantClient()
-        logger.info("Initialized OpenAI chat model with function calling capability")
+        logger.debug("="*50)
 
     def _format_messages(self, message: str, chat_history: List[Dict[str, str]], system_prompt: Optional[str] = None) -> List[Dict[str, str]]:
         """
@@ -137,111 +160,111 @@ class ChatLLM:
     async def generate_chat_response(
         self,
         message: str,
-        chat_history: List[Dict[str, str]],
-        client_id: str = None,
+        chat_history: List[Dict[str, Any]],
+        client_id: Optional[str] = None,
         system_prompt: Optional[str] = None
     ) -> ChatResponse:
         """
-        Generate a response using the OpenAI API with function calling capability.
-        
-        Args:
-            message: Current user message
-            chat_history: List of previous messages
-            client_id: Optional client ID for tracking
-            system_prompt: Optional custom system prompt
-            
-        Returns:
-            ChatResponse: Response containing message and product information
-            
-        Raises:
-            Exception: If generation fails after retries
+        Generate a chat response using the language model.
         """
+        logger.debug("="*50)
+        logger.debug("GENERATING CHAT RESPONSE")
+        logger.debug("="*50)
+        
         try:
-            start_time = time.time()
-            logger.debug(f"Generating response for message: {message[:100]}...")
-            
-            # Format messages for OpenAI API
+            # Log input parameters
+            logger.debug("Input parameters:")
+            logger.debug(f"- Message: {message}")
+            logger.debug(f"- Client ID: {client_id}")
+            logger.debug(f"- System prompt present: {'Yes' if system_prompt else 'No'}")
+            logger.debug(f"- Chat history length: {len(chat_history)}")
+            if chat_history:
+                logger.debug("Chat history:")
+                logger.debug(json.dumps(chat_history, indent=2))
+
+            # Prepare messages for the chat completion
+            logger.debug("\nPreparing messages for chat completion...")
             messages = self._format_messages(message, chat_history, system_prompt)
             
-            # Make API request with function calling
-            logger.debug("Making request to OpenAI API...")
-            response = await self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=messages,
-                functions=[AVAILABLE_FUNCTIONS["query_supplements"]],
-                function_call="auto",
-                temperature=0.7,
-                max_tokens=250
-            )
-            
-            message = response.choices[0].message
-            products = None
-            function_called = False
-            function_name = None
-            
-            if message.function_call:
-                function_called = True
-                function_name = message.function_call.name
-                function_args = eval(message.function_call.arguments)
-                
-                # Execute the function and get products
-                products = await self._handle_function_call(function_name, function_args)
-                
-                # Get final response with function result
-                messages.append(message)
-                messages.append({
-                    "role": "function",
-                    "name": function_name,
-                    "content": str(products)  # Convert products to string for the model
-                })
-                
-                response = await self.client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+            # Generate embedding for the message
+            logger.debug("\nGenerating message embedding...")
+            try:
+                embedding_response = self.client.embeddings.create(
+                    model="text-embedding-3-small",
+                    input=message
+                )
+                query_vector = embedding_response.data[0].embedding
+                logger.debug(f"Successfully generated embedding of length {len(query_vector)}")
+            except Exception as e:
+                logger.error(f"Error generating embedding: {str(e)}", exc_info=True)
+                raise
+
+            # Query Qdrant for relevant products
+            logger.debug("\nQuerying Qdrant for relevant products...")
+            try:
+                products = await self.qdrant_client.query_qdrant(
+                    query_vector=query_vector,
+                    limit=3,
+                    client_id=client_id
+                )
+                logger.debug(f"Found {len(products)} relevant products")
+                if products:
+                    logger.debug("Product details:")
+                    logger.debug(json.dumps([p.dict() for p in products], indent=2))
+            except Exception as e:
+                logger.error(f"Error querying Qdrant: {str(e)}", exc_info=True)
+                products = []
+
+            # Generate chat completion
+            logger.debug("\nGenerating chat completion...")
+            try:
+                completion = self.client.chat.completions.create(
+                    model="gpt-4-turbo-preview",
                     messages=messages,
                     temperature=0.7,
-                    max_tokens=250
+                    max_tokens=500
                 )
-                generated_text = response.choices[0].message.content.strip()
-            else:
-                generated_text = message.content.strip()
-            
-            # Determine if we should recommend products
-            should_recommend = bool(products) or any(keyword in generated_text.lower() 
-                                                   for keyword in ["recommend", "suggest", "try", "consider", "look at"])
-            
-            # Log response details
-            elapsed_time = time.time() - start_time
-            print("\n" + "="*50)
-            print("RESPONSE GENERATION")
-            print("="*50)
-            print(f"Time taken: {elapsed_time:.2f}s")
-            print(f"Response length: {len(generated_text)} characters")
-            print(f"Should recommend products: {should_recommend}")
-            print(f"Function called: {function_called}")
-            if function_called:
-                print(f"Function name: {function_name}")
-            if products:
-                print(f"Number of products returned: {len(products)}")
-            print("\nGenerated Response:")
-            print("-"*30)
-            print(generated_text)
-            print("-"*30)
-            print("="*50 + "\n")
-            
-            return ChatResponse(
+                response_content = completion.choices[0].message.content
+                logger.debug("Successfully generated chat completion:")
+                logger.debug(response_content)
+            except Exception as e:
+                logger.error(f"Error generating chat completion: {str(e)}", exc_info=True)
+                raise
+
+            # Create response
+            logger.debug("\nCreating ChatResponse object...")
+            response = ChatResponse(
                 role="assistant",
-                content=generated_text,
-                recommend=should_recommend,
-                products=products,
-                function_called=function_called,
-                function_name=function_name
+                content=response_content,
+                recommend=len(products) > 0,
+                products=products
             )
-            
+            logger.debug("Created response:")
+            logger.debug(json.dumps(response.dict(), indent=2))
+
+            logger.info("Successfully generated chat response")
+            logger.debug("="*50)
+            return response
+
         except Exception as e:
-            logger.error(f"Error generating chat response: {str(e)}", exc_info=True)
+            logger.error(f"Error in generate_chat_response: {str(e)}", exc_info=True)
+            logger.debug("="*50)
             raise
 
     async def close(self):
         """Close the OpenAI client."""
-        logger.debug("Closing OpenAI client...")
-        await self.client.close() 
+        logger.debug("="*50)
+        logger.debug("CLOSING CHAT LLM")
+        logger.debug("="*50)
+        try:
+            logger.debug("Closing OpenAI client...")
+            await self.client.close()
+            logger.debug("Successfully closed OpenAI client")
+            
+            # Close Qdrant client
+            await self.qdrant_client.close()
+            logger.debug("Successfully closed Qdrant client")
+        except Exception as e:
+            logger.error(f"Error closing ChatLLM: {str(e)}", exc_info=True)
+            raise
+        logger.debug("="*50) 
