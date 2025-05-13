@@ -49,6 +49,13 @@ AVAILABLE_FUNCTIONS = {
     }
 }
 
+# Custom JSON encoder for datetime objects
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
 class ChatLLM:
     def __init__(self):
         """Initialize the chat LLM with OpenAI API configuration."""
@@ -180,7 +187,7 @@ class ChatLLM:
             logger.debug(f"- Chat history length: {len(chat_history)}")
             if chat_history:
                 logger.debug("Chat history:")
-                logger.debug(json.dumps(chat_history, indent=2))
+                logger.debug(json.dumps(chat_history, indent=2, cls=DateTimeEncoder))
 
             # Prepare messages for the chat completion
             logger.debug("\nPreparing messages for chat completion...")
@@ -189,7 +196,7 @@ class ChatLLM:
             # Generate embedding for the message
             logger.debug("\nGenerating message embedding...")
             try:
-                embedding_response = self.client.embeddings.create(
+                embedding_response = await self.client.embeddings.create(
                     model="text-embedding-3-small",
                     input=message
                 )
@@ -210,7 +217,7 @@ class ChatLLM:
                 logger.debug(f"Found {len(products)} relevant products")
                 if products:
                     logger.debug("Product details:")
-                    logger.debug(json.dumps([p.dict() for p in products], indent=2))
+                    logger.debug(json.dumps([p.dict() for p in products], indent=2, cls=DateTimeEncoder))
             except Exception as e:
                 logger.error(f"Error querying Qdrant: {str(e)}", exc_info=True)
                 products = []
@@ -218,7 +225,7 @@ class ChatLLM:
             # Generate chat completion
             logger.debug("\nGenerating chat completion...")
             try:
-                completion = self.client.chat.completions.create(
+                completion = await self.client.chat.completions.create(
                     model="gpt-4-turbo-preview",
                     messages=messages,
                     temperature=0.7,
@@ -240,7 +247,7 @@ class ChatLLM:
                 products=products
             )
             logger.debug("Created response:")
-            logger.debug(json.dumps(response.dict(), indent=2))
+            logger.debug(json.dumps(response.dict(), indent=2, cls=DateTimeEncoder))
 
             logger.info("Successfully generated chat response")
             logger.debug("="*50)
