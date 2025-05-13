@@ -71,11 +71,6 @@ class QdrantClient:
                     "size": self.vector_size,
                     "distance": "Cosine"
                 },
-                "optimizers_config": {
-                    "indexing_threshold": 0,
-                    "memmap_threshold": 0,
-                    "max_optimization_threads": 4
-                },
                 "on_disk_payload": True
             }
             logger.debug(f"Collection config: {json.dumps(collection_config, indent=2)}")
@@ -86,7 +81,10 @@ class QdrantClient:
                 vectors_config=VectorParams(
                     size=self.vector_size,
                     distance=Distance.COSINE
-                )
+                ),
+                optimizers_config={
+                    "default_segment_number": 2
+                }
             )
             logger.info(f"Successfully created collection '{self.collection_name}'")
             
@@ -131,8 +129,12 @@ class QdrantClient:
         try:
             # Get collection info for dimension checking
             logger.debug("\nChecking collection dimensions...")
-            collection_info = self.client.get_collection(self.collection_name)
-            collection_dim = collection_info.config.params.vectors.size
+            try:
+                collection_info = self.client.get_collection(self.collection_name)
+                collection_dim = collection_info.config.params.vectors.size
+            except Exception as e:
+                logger.warning(f"Could not get collection info for dimension check: {str(e)}. Assuming dimension {self.vector_size}.")
+                collection_dim = self.vector_size
             query_dim = len(query_vector)
             
             logger.debug(f"Dimension check:")
