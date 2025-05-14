@@ -53,55 +53,17 @@ class QdrantClient:
             logger.error(f"Failed to create QdrantBaseClient: {str(e)}", exc_info=True)
             raise
         
-        # Create or recreate collection with proper configuration
-        logger.debug("\nSetting up collection...")
+        # Only connect to Qdrant, do not create or modify collections
+        logger.debug("\nChecking for collection existence...")
         try:
             collections = self.client.get_collections().collections
             logger.debug(f"Existing collections: {[c.name for c in collections]}")
-            
-            if self.collection_name in [c.name for c in collections]:
-                logger.info(f"Collection '{self.collection_name}' exists, recreating...")
-                self.client.delete_collection(collection_name=self.collection_name)
-                logger.debug("Successfully deleted existing collection")
-            
-            logger.debug("Creating new collection with configuration:")
-            collection_config = {
-                "collection_name": self.collection_name,
-                "vectors_config": {
-                    "size": self.vector_size,
-                    "distance": "Cosine"
-                },
-                "on_disk_payload": True
-            }
-            logger.debug(f"Collection config: {json.dumps(collection_config, indent=2)}")
-            
-            # Create collection with minimal configuration
-            self.client.recreate_collection(
-                collection_name=self.collection_name,
-                vectors_config=VectorParams(
-                    size=self.vector_size,
-                    distance=Distance.COSINE
-                ),
-                optimizers_config={
-                    "default_segment_number": 2
-                }
-            )
-            logger.info(f"Successfully created collection '{self.collection_name}'")
-            
-            # Verify collection creation - handle both local and cloud responses
-            try:
-                collection_info = self.client.get_collection(self.collection_name)
-                # Log only the essential information we need
-                logger.debug("Collection created successfully with:")
-                logger.debug(f"- Name: {collection_info.name}")
-                logger.debug(f"- Vector size: {collection_info.config.params.vectors.size}")
-                logger.debug(f"- Distance: {collection_info.config.params.vectors.distance}")
-            except Exception as e:
-                logger.warning(f"Could not get detailed collection info: {str(e)}")
-                logger.info("Collection was created but could not verify details")
-            
+            if self.collection_name not in [c.name for c in collections]:
+                logger.error(f"Collection '{self.collection_name}' does not exist! Backend will not function until it is created and populated.")
+            else:
+                logger.info(f"Collection '{self.collection_name}' exists and is ready.")
         except Exception as e:
-            logger.error(f"Error in collection setup: {str(e)}", exc_info=True)
+            logger.error(f"Error checking collection existence: {str(e)}", exc_info=True)
             raise
         
         logger.info(f"Successfully initialized Qdrant client for collection: {self.collection_name}")
