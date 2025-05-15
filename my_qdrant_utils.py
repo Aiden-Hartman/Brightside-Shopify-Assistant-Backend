@@ -1,8 +1,8 @@
 import os
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from qdrant_client import QdrantClient as QdrantBaseClient
 from qdrant_client.http import models
-from qdrant_client.http.models import Filter, FieldCondition, MatchValue, VectorParams, Distance
+from qdrant_client.http.models import Filter, FieldCondition, MatchValue, MatchAny, MatchExcept
 from dotenv import load_dotenv
 import logging
 from models import Product
@@ -69,6 +69,69 @@ class QdrantClient:
         logger.info(f"Successfully initialized Qdrant client for collection: {self.collection_name}")
         logger.debug("="*50)
 
+    def _build_filter_condition(self, key: str, value: Any) -> FieldCondition:
+        """Build a filter condition based on the value type."""
+        if isinstance(value, dict):
+            if 'not' in value:
+                # Handle NOT condition
+                except_value = value['not']
+                if not isinstance(except_value, list):
+                    except_value = [except_value]
+                # Convert booleans to lowercase strings for Qdrant compatibility
+                except_value = [str(v).lower() if isinstance(v, bool) else v for v in except_value]
+                return FieldCondition(
+                    key=key,
+                    match=MatchExcept(**{'except': except_value})
+                )
+            elif 'range' in value:
+                # Handle range conditions
+                range_conditions = {}
+                if 'gt' in value['range']:
+                    range_conditions['gt'] = value['range']['gt']
+                if 'gte' in value['range']:
+                    range_conditions['gte'] = value['range']['gte']
+                if 'lt' in value['range']:
+                    range_conditions['lt'] = value['range']['lt']
+                if 'lte' in value['range']:
+                    range_conditions['lte'] = value['range']['lte']
+                return FieldCondition(
+                    key=key,
+                    range=range_conditions
+                )
+            elif 'text' in value:
+                # Handle text matching
+                return FieldCondition(
+                    key=key,
+                    match=models.MatchText(
+                        text=value['text'],
+                        match_type=value.get('match_type', 'exact')  # 'exact' or 'any'
+                    )
+                )
+            elif 'geo' in value:
+                # Handle geo radius search
+                return FieldCondition(
+                    key=key,
+                    geo=models.GeoRadius(
+                        center=models.GeoPoint(
+                            lon=value['geo']['lon'],
+                            lat=value['geo']['lat']
+                        ),
+                        radius=value['geo']['radius']
+                    )
+                )
+        elif isinstance(value, list):
+            # Handle OR condition
+            return FieldCondition(
+                key=key,
+                match=MatchAny(any=value)
+            )
+        else:
+            # Handle simple equality
+            return FieldCondition(
+                key=key,
+                match=MatchValue(value=value)
+            )
+
     async def query_qdrant(
         self,
         query_vector: List[float],
@@ -114,12 +177,8 @@ class QdrantClient:
                 logger.debug("\nBuilding search filter...")
                 conditions = []
                 for key, value in filters.items():
-                    conditions.append(
-                        FieldCondition(
-                            key=key,
-                            match=MatchValue(value=value)
-                        )
-                    )
+                    condition = self._build_filter_condition(key, value)
+                    conditions.append(condition)
                 logger.debug(f"Filter conditions: {json.dumps([c.dict() for c in conditions], indent=2)}")
                 search_filter = Filter(must=conditions)
                 logger.debug(f"Final search filter: {search_filter.dict()}")
