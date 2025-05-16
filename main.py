@@ -16,13 +16,10 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Product Recommendation API")
 
-# Enable CORS for localhost development and Vercel frontend
+# Enable CORS for localhost development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # Local development
-        "https://brightside-shopify-assistant-frontend.vercel.app"  # Vercel frontend
-    ],
+    allow_origins=["http://localhost:3000"],  # Add your frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -115,7 +112,8 @@ async def recommend(request: RecommendRequest):
                     "description": p.description,
                     "image": p.image_url,
                     "link": p.product_url,
-                    "formattedPrice": f"${p.price}"
+                    "formattedPrice": f"${p.price}",
+                    "score": p.score
                 }
                 for p in products
             ]
