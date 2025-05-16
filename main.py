@@ -19,7 +19,10 @@ app = FastAPI(title="Product Recommendation API")
 # Enable CORS for localhost development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Add your frontend URL
+    allow_origins=[
+        "http://localhost:3000",  # Local development
+        "https://brightside-shopify-assistant-frontend.vercel.app"  # Production frontend
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
